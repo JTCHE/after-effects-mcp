@@ -1,0 +1,202 @@
+// bridge-entry.jsx
+// UI/polling half of the MCP Bridge panel. This file is NOT deployed directly —
+// `npm run build` concatenates bridge-lib/*.jsx + this file into the generated
+// "MCP Bridge.jsx", which is what actually gets copied to the AE install path.
+// (An ExtendScript #include-based split was tried first and reverted: AE's
+// reloadBridge()'s `$.evalFile` did not process #include directives the same way
+// panel-open does — a live test left reloadBridge silently no-op'ing instead of
+// picking up new code. Build-time concatenation gives identical runtime behavior
+// to the old single-file bridge while still keeping the source small and modular.)
+
+// Remember where AE loaded us from, and distinguish a code-only reload (our
+// "Reload Panel" button re-evals this file) from a fresh panel open by AE. On a
+// reload we refresh all the handler functions but skip rebuilding the UI /
+// rescheduling the poller — so no second window and no double polling.
+$.global.__mcpBridgeScriptFile = $.fileName;
+var __mcpReloading = ($.global.__mcpBridgeReloading === true);
+$.global.__mcpBridgeReloading = false;
+var __BRIDGE_VERSION = "v3-split";
+
+// Build the UI only on a real panel open (skip on a code-only reload — the
+// existing widgets and their globals are reused).
+if (!__mcpReloading) {
+// Dockable when launched from the ScriptUI Panels folder (AE passes a Panel as `this`);
+// falls back to a floating palette when run any other way. This is the canonical AE idiom.
+var panel = (this instanceof Panel) ? this : new Window("palette", "MCP Bridge", undefined, {resizeable: true});
+panel.orientation = "column";
+panel.alignChildren = ["fill", "top"];
+panel.spacing = 10;
+panel.margins = 16;
+
+// Status display
+var statusText = panel.add("statictext", undefined, "Waiting for commands...");
+statusText.alignment = ["fill", "top"];
+
+// Add log area
+var logPanel = panel.add("panel", undefined, "Command Log");
+logPanel.orientation = "column";
+logPanel.alignChildren = ["fill", "fill"];
+var logText = logPanel.add("edittext", undefined, "", {multiline: true, readonly: true});
+logText.preferredSize.height = 200;
+
+// Auto-run checkbox
+var autoRunCheckbox = panel.add("checkbox", undefined, "Auto-run commands");
+autoRunCheckbox.value = true;
+
+// Check interval (ms)
+var checkInterval = 2000;
+var isChecking = false;
+// app.scheduleTask task id, so we can cancel a stale/duplicate schedule before
+// re-arming (AE can silently drop the repeating task while a modal-ish UI
+// state — e.g. the Timeline's inline expression editor — is active).
+var scheduledTaskId = null;
+}
+
+// Log message to panel. logText can be transiently unavailable mid-reloadBridge()
+// (the fresh $.evalFile pass skips UI rebuild but there's a brief window before
+// this function itself is redefined) — never let a log call crash the command.
+function logToPanel(message) {
+    var timestamp = new Date().toLocaleTimeString();
+    try {
+        logText.text = timestamp + ": " + message + "\n" + logText.text;
+    } catch (e) {}
+}
+
+// Same transient-unavailability risk as logToPanel, for the other UI widget commonly
+// touched mid-command (see logToPanel's comment).
+function setStatus(message) {
+    try {
+        statusText.text = message;
+    } catch (e) {}
+}
+
+// Check for new commands
+function checkForCommands() {
+    try {
+        if (!autoRunCheckbox.value || isChecking) return;
+    } catch (e) {
+        return; // autoRunCheckbox transiently unavailable (mid-reloadBridge) - skip this poll
+    }
+
+    isChecking = true;
+    var pollTime = new Date().toLocaleTimeString();
+
+    // try/finally so isChecking ALWAYS gets reset, even if something in here
+    // throws in a way the inner catch doesn't expect. A stuck isChecking=true
+    // would silently no-op every future poll forever.
+    try {
+        try {
+            var commandFile = new File(getCommandFilePath());
+            var ranCommand = false;
+            if (commandFile.exists) {
+                commandFile.open("r");
+                var content = commandFile.read();
+                commandFile.close();
+
+                if (content) {
+                    var commandData = (typeof JSON !== "undefined" && JSON.parse)
+                        ? JSON.parse(content)
+                        : eval("(" + content + ")");
+
+                    // Only execute pending commands
+                    if (commandData.status === "pending") {
+                        // Update status to running
+                        updateCommandStatus("running", commandData.timestamp);
+
+                        // Execute the command
+                        executeCommand(commandData.command, commandData.args || {}, commandData.timestamp);
+                        ranCommand = true;
+                    }
+                }
+            }
+            // Heartbeat: make it visually obvious in the panel that polling is
+            // alive, instead of silently doing nothing when there's no command.
+            if (!ranCommand) {
+                setStatus("Waiting for commands... (last poll " + pollTime + ")");
+            }
+        } catch (e) {
+            logToPanel("Error checking for commands: " + e.toString());
+        }
+    } finally {
+        isChecking = false;
+    }
+}
+
+// Set up timer to check for commands. Cancels any previously-scheduled task
+// first — app.scheduleTask can be silently dropped by AE while a modal-ish UI
+// state (e.g. the Timeline's inline expression editor) is active, and it does
+// NOT auto-resume; re-arming without cancelling would also stack duplicate
+// concurrent pollers.
+function startCommandChecker() {
+    if (scheduledTaskId !== null && scheduledTaskId !== undefined) {
+        try { app.cancelTask(scheduledTaskId); } catch (e) {}
+    }
+    scheduledTaskId = app.scheduleTask("checkForCommands()", checkInterval, true);
+}
+
+// Runs checkForCommands() synchronously, right now, from a button click.
+// A manual click always reaches AE's event loop even when the scheduled idle
+// task has stalled (e.g. AE suspended it during an expression-editor edit),
+// so this is the reliable way to unstick/verify the bridge without closing
+// the panel.
+function forceCheckNow() {
+    isChecking = false; // defensive: clear a stuck flag before forcing a check
+    logToPanel("Force Check Now clicked.");
+    checkForCommands();
+}
+
+// Re-eval this file from disk so edits to the handlers take effect without
+// closing/reopening the panel. Sets a flag the fresh eval reads to skip UI rebuild.
+// Also does a FULL reset of the poller (cancel + reschedule the task, clear
+// isChecking) so this button is a real reset, not just a code refresh.
+function reloadBridge() {
+    try {
+        var f = new File($.global.__mcpBridgeScriptFile);
+        if (!f.exists) { logToPanel("Reload failed - script not found: " + f.fsName); return; }
+        logToPanel("Reloading handlers from " + f.fsName);
+        $.global.__mcpBridgeReloading = true;
+        $.evalFile(f);
+        isChecking = false;
+        startCommandChecker(); // cancel + re-arm the polling task
+        logToPanel("Reload complete. Polling task re-armed.");
+        setStatus("Reloaded panel code and restarted polling.");
+    } catch (e) {
+        $.global.__mcpBridgeReloading = false;
+        logToPanel("Reload error: " + e.toString());
+    }
+}
+
+if (!__mcpReloading) {
+var buttonRow = panel.add("group", undefined);
+buttonRow.orientation = "row";
+
+// Reload button: pulls the latest handler code off disk AND fully resets the
+// poller (cancels + re-arms the scheduled task, clears isChecking).
+var reloadButton = buttonRow.add("button", undefined, "Reload Panel");
+reloadButton.onClick = function() { reloadBridge(); };
+
+// Force Check Now: runs checkForCommands() synchronously on click. A manual
+// click always gets through AE's event loop even when app.scheduleTask has
+// stalled, so this recovers/unsticks the bridge without reloading anything.
+var forceCheckButton = buttonRow.add("button", undefined, "Force Check Now");
+forceCheckButton.onClick = function() { forceCheckNow(); };
+
+// Log startup
+logToPanel("MCP Bridge started");
+logToPanel("Command file: " + getCommandFilePath());
+statusText.text = "Ready - Auto-run is " + (autoRunCheckbox.value ? "ON" : "OFF");
+
+// Start the command checker
+startCommandChecker();
+
+// Lay out, and keep contents resizing with the panel/window frame.
+panel.layout.layout(true);
+panel.layout.resize();
+panel.onResizing = panel.onResize = function () { this.layout.resize(); };
+
+// Only a floating Window needs to be centered and shown; a docked Panel is already visible.
+if (panel instanceof Window) {
+    panel.center();
+    panel.show();
+}
+}

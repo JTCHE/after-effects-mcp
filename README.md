@@ -136,8 +136,8 @@ Go to your client (e.g., Claude or Cursor) and update your config file:
 
 2. **Open After Effects**
 
-3. **Open the MCP Bridge Auto panel**
-   - In After Effects, go to Window > mcp-bridge-auto.jsx
+3. **Open the MCP Bridge panel**
+   - In After Effects, go to Window > MCP Bridge.jsx
    - The panel will automatically check for commands every few seconds
    - Make sure the "Auto-run commands" checkbox is enabled
 
@@ -221,7 +221,7 @@ You can animate layers with:
 ### 🧩 Project Structure
 
 - `src/index.ts`: MCP server implementation
-- `src/scripts/mcp-bridge-auto.jsx`: Main After Effects panel script
+- `src/scripts/MCP Bridge.jsx`: Main After Effects panel script
 - `install-bridge.js`: Script to install the panel in After Effects
 
 ### 📦 Building the Project
