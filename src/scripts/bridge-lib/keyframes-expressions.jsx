@@ -1,6 +1,20 @@
 // Keyframe/expression get-set commands. Depends on resolveComp/resolvePropertyPath/
 // resolveLayerAndProperty from utils.jsx.
 
+// AE's native property.expressionError string ships with \r\n, tabs, a "▶" pointer
+// glyph and curly quotes baked in — readable in the AE UI's monospace error box, just
+// noise once flattened into JSON (embedded newlines print as literal \n escapes).
+// Collapse it to one plain line.
+function cleanExpressionError(str) {
+    if (!str) return str;
+    return str
+        .replace(/[\r\n\t▶]+/g, " ")
+        .replace(/[‘’]/g, "'")
+        .replace(/[“”]/g, '"')
+        .replace(/\s{2,}/g, " ")
+        .replace(/^\s+|\s+$/g, "");
+}
+
 function setLayerKeyframe(args) {
     try {
         var layerIndex = args.layerIndex, propertyName = args.propertyName,
@@ -140,7 +154,7 @@ function getExpression(args) {
             propertyPath: r.propertyLabel,
             expression: expr,
             expressionEnabled: !!r.property.expressionEnabled,
-            expressionError: hasError ? r.property.expressionError : null
+            expressionError: hasError ? cleanExpressionError(r.property.expressionError) : null
         });
     } catch (e) {
         return JSON.stringify({ success: false, message: "Error reading expression: " + e.toString() + " (Line: " + e.line + ")" });
