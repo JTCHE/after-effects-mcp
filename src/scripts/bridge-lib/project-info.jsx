@@ -202,11 +202,21 @@ function getLayerTree(args) {
         return node;
     }
 
+    var exclude = null;
+    if (args.excludeSections && args.excludeSections.length) {
+        exclude = {};
+        for (var xi = 0; xi < args.excludeSections.length; xi++) {
+            exclude[String(args.excludeSections[xi]).toLowerCase()] = true;
+        }
+    }
+
     function nodeForLayer(layer) {
         var node = { name: layer.name, matchName: layer.matchName, children: [] };
         for (var i = 1; i <= layer.numProperties; i++) {
             if (counter.truncated) break;
-            var child = walkProp(layer.property(i), 1);
+            var topProp = layer.property(i);
+            if (exclude && exclude[String(topProp.name).toLowerCase()]) continue;
+            var child = walkProp(topProp, 1);
             if (child) node.children.push(child);
         }
         return node;

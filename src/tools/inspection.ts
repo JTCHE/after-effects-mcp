@@ -23,7 +23,8 @@ export function registerInspectionTools(server: McpServer) {
       layerName: z.string().optional().describe("Name of a single layer to inspect. Omit (with layerIndex) to dump every layer in the comp."),
       namesOnly: z.boolean().optional().describe("If true, skip the property walk entirely and return just {index, name, matchName} per layer — cheap overview for comps where a full dump would blow the context limit. Ignores layerIndex/layerName/depth/maxNodes."),
       depth: z.number().int().positive().optional().describe("Max property-group nesting depth to descend (default 4 — reaches e.g. Contents > Group > Rect > Size)."),
-      maxNodes: z.number().int().positive().optional().describe("Hard cap on total nodes walked before truncating (default 500).")
+      maxNodes: z.number().int().positive().optional().describe("Hard cap on total nodes walked before truncating (default 500)."),
+      excludeSections: z.array(z.string()).optional().describe("Top-level layer property group names to skip entirely (case-insensitive, e.g. [\"Layer Styles\", \"Geometry Options\", \"Material Options\"]). Use this to trim noise when hunting for content/transform expressions on layers with a big Layer Styles dump.")
     },
     async (parameters) => {
       try {
