@@ -43,7 +43,9 @@ export function registerKeyframeExpressionTools(server: McpServer) {
   server.tool(
     "setExpressions",
     "Set or remove expressions on multiple layer properties in one round trip. Each edit is isolated — " +
-    "one bad propertyPath/expression is reported per-edit and doesn't abort the rest of the batch.",
+    "one bad propertyPath/expression is reported per-edit and doesn't abort the rest of the batch. " +
+    "Unsure of expression-engine syntax (enums, object methods)? Check search-ae-docs (scope: 'expressions') " +
+    "first — cheaper than iterating on getExpression's error text.",
     {
       edits: z.array(z.object({
         ...CompLayerIdentifierSchema,
@@ -82,7 +84,8 @@ export function registerKeyframeExpressionTools(server: McpServer) {
 
   server.tool(
     "setLayerExpression",
-    "Set or remove an expression for a specific layer property.",
+    "Set or remove an expression for a specific layer property. Unsure of expression-engine syntax? Check " +
+    "search-ae-docs (scope: 'expressions') first — cheaper than iterating on getExpression's error text.",
     {
       ...LayerIdentifierSchema,
       propertyName: z.string().optional().describe("Top-level property name (e.g., 'Position', 'Scale', 'Rotation', 'Opacity'). Sugar for propertyPath: [propertyName]. Provide this or propertyPath."),

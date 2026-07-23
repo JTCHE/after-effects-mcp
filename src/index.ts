@@ -13,6 +13,7 @@ import { registerJsxTools } from "./tools/jsx.js";
 import { registerInspectionTools } from "./tools/inspection.js";
 import { registerViewportTools } from "./tools/viewport.js";
 import { registerHelpTools } from "./tools/help.js";
+import { registerDocsTools } from "./tools/docs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +34,7 @@ registerJsxTools(server);
 registerInspectionTools(server);
 registerViewportTools(server, SCRIPTS_DIR);
 registerHelpTools(server);
+registerDocsTools(server);
 
 async function main() {
   console.error("After Effects MCP Server starting...");
