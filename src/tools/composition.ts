@@ -4,6 +4,24 @@ import { runAndWait } from "../bridge/client.js";
 
 export function registerCompositionTools(server: McpServer) {
   server.tool(
+    "get-composition-info",
+    "Get a composition's dimensions, frameRate, duration, pixelAspect, bgColor, current time and layer " +
+    "count in one call — folds what would otherwise need a separate run-jsx call (e.g. just for bgColor) " +
+    "into the same round trip.",
+    {
+      compName: z.string().optional().describe("Name of the target composition (preferred). Falls back to compIndex, then the active comp."),
+      compIndex: z.number().int().positive().optional().describe("1-based index of the target composition. Prefer compName.")
+    },
+    async (parameters) => {
+      try {
+        return await runAndWait("getCompositionInfo", parameters);
+      } catch (error) {
+        return { content: [{ type: "text", text: `Error getting composition info: ${String(error)}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
     "create-composition",
     "Create a new composition in After Effects with specified parameters",
     {

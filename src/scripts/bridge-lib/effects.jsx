@@ -1,5 +1,5 @@
 // Effect apply/remove/rename/enable/template commands, plus getEffectPropertiesByMatchName
-// (matchName lookup via a throwaway scratch solid) and the bridgeTestEffects smoke test.
+// (matchName lookup via a throwaway scratch solid).
 // Depends on resolveComp/listEffectProperties from utils.jsx.
 
 // --- applyEffect (from applyEffect.jsx) ---
@@ -82,6 +82,80 @@ function applyEffect(args) {
             status: "error",
             message: error.toString()
         }, null, 2);
+    }
+}
+
+// Lightweight "what effects does this layer already have" check — name/matchName/
+// index/enabled per effect, no property dump. Cheaper than getLayerTree when all the
+// agent needs is presence/order of the effect stack.
+function listLayerEffects(args) {
+    try {
+        var layerIndex = args.layerIndex || 1;
+        var comp = resolveComp(args);
+        if (!comp) throw new Error("Composition not found (pass compName or compIndex, or open a comp)");
+        var layer = comp.layer(layerIndex);
+        if (!layer) throw new Error("Layer not found at index " + layerIndex + " in composition '" + comp.name + "'");
+
+        var effects = layer.property("ADBE Effect Parade");
+        var out = [];
+        if (effects) {
+            for (var i = 1; i <= effects.numProperties; i++) {
+                var fx = effects.property(i);
+                out.push({ index: i, name: fx.name, matchName: fx.matchName, enabled: fx.enabled });
+            }
+        }
+        return JSON.stringify({
+            status: "success",
+            composition: comp.name,
+            layer: { name: layer.name, index: layerIndex },
+            effects: out
+        }, null, 2);
+    } catch (error) {
+        return JSON.stringify({ status: "error", message: error.toString() }, null, 2);
+    }
+}
+
+// Flat property list (index, name, matchName, value, valueType) for an effect already
+// applied to a layer, identified by effectIndex/effectName/effectMatchName. Effects can
+// have multiple properties sharing the same display name (e.g. Grid's own "Width" vs. a
+// Feather sub-group's "Width") — effect("Name")("Name") in expressions/run-jsx silently
+// grabs the first match, which can be the wrong one. Use the returned index or matchName
+// (both unambiguous) instead of the display name to address the intended property.
+function getLayerEffectProperties(args) {
+    try {
+        var layerIndex = args.layerIndex || 1;
+        var comp = resolveComp(args);
+        if (!comp) throw new Error("Composition not found (pass compName or compIndex, or open a comp)");
+        var layer = comp.layer(layerIndex);
+        if (!layer) throw new Error("Layer not found at index " + layerIndex + " in composition '" + comp.name + "'");
+
+        var effects = layer.property("ADBE Effect Parade");
+        if (!effects || effects.numProperties === 0) throw new Error("Layer '" + layer.name + "' has no effects");
+
+        var target = null;
+        if (args.effectIndex) {
+            target = effects.property(args.effectIndex);
+        } else if (args.effectMatchName) {
+            for (var i = 1; i <= effects.numProperties; i++) {
+                if (effects.property(i).matchName === args.effectMatchName) { target = effects.property(i); break; }
+            }
+        } else if (args.effectName) {
+            for (var j = 1; j <= effects.numProperties; j++) {
+                if (effects.property(j).name === args.effectName) { target = effects.property(j); break; }
+            }
+        } else {
+            throw new Error("Specify effectName, effectMatchName, or effectIndex");
+        }
+        if (!target) throw new Error("Effect not found on layer '" + layer.name + "'");
+
+        return JSON.stringify({
+            status: "success",
+            layer: { name: layer.name, index: layerIndex },
+            effect: { name: target.name, matchName: target.matchName, index: target.propertyIndex },
+            properties: listEffectProperties(target)
+        }, null, 2);
+    } catch (e) {
+        return JSON.stringify({ status: "error", message: e.toString() }, null, 2);
     }
 }
 
@@ -479,34 +553,5 @@ function getEffectPropertiesByMatchName(args) {
             } catch (eRm) {}
         }
         app.endUndoGroup();
-    }
-}
-
-// --- Bridge test function to verify communication and effects application ---
-function bridgeTestEffects(args) {
-    try {
-        var compIndex = (args && args.compIndex) ? args.compIndex : 1;
-        var layerIndex = (args && args.layerIndex) ? args.layerIndex : 1;
-
-        var blurRes = JSON.parse(applyEffect({
-            compIndex: compIndex,
-            layerIndex: layerIndex,
-            effectMatchName: "ADBE Gaussian Blur 2",
-            effectSettings: { "Blurriness": 5 }
-        }));
-
-        var shadowRes = JSON.parse(applyEffectTemplate({
-            compIndex: compIndex,
-            layerIndex: layerIndex,
-            templateName: "drop-shadow"
-        }));
-
-        return JSON.stringify({
-            status: "success",
-            message: "Bridge test effects applied.",
-            results: [blurRes, shadowRes]
-        }, null, 2);
-    } catch (e) {
-        return JSON.stringify({ status: "error", message: e.toString() }, null, 2);
     }
 }

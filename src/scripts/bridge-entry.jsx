@@ -50,6 +50,9 @@ var isChecking = false;
 // re-arming (AE can silently drop the repeating task while a modal-ish UI
 // state — e.g. the Timeline's inline expression editor — is active).
 var scheduledTaskId = null;
+// Updated at the top of every checkForCommands() run. onActivate below compares
+// against this to notice a dead poller and self-heal without a manual click.
+var lastPollAt = new Date().getTime();
 }
 
 // Log message to panel. logText can be transiently unavailable mid-reloadBridge()
@@ -79,6 +82,7 @@ function checkForCommands() {
     }
 
     isChecking = true;
+    lastPollAt = new Date().getTime();
     var pollTime = new Date().toLocaleTimeString();
 
     // try/finally so isChecking ALWAYS gets reset, even if something in here
@@ -119,36 +123,42 @@ function checkForCommands() {
         }
     } finally {
         isChecking = false;
+        // Re-arm the NEXT check as a fresh one-shot task rather than relying on
+        // app.scheduleTask's own repeating mode. AE has been observed to silently
+        // drop a repeating task and never resume it; a one-shot that reschedules
+        // itself each time it actually runs has no persistent repeating task for
+        // AE to drop in the first place.
+        startCommandChecker();
     }
 }
 
-// Set up timer to check for commands. Cancels any previously-scheduled task
-// first — app.scheduleTask can be silently dropped by AE while a modal-ish UI
-// state (e.g. the Timeline's inline expression editor) is active, and it does
-// NOT auto-resume; re-arming without cancelling would also stack duplicate
-// concurrent pollers.
+// Schedule the next checkForCommands() call. Cancels any previously-scheduled
+// task first — belt-and-suspenders against stacking duplicate concurrent
+// pollers (e.g. if both a self-rearm and a manual Force Check Now race).
 function startCommandChecker() {
     if (scheduledTaskId !== null && scheduledTaskId !== undefined) {
         try { app.cancelTask(scheduledTaskId); } catch (e) {}
     }
-    scheduledTaskId = app.scheduleTask("checkForCommands()", checkInterval, true);
+    scheduledTaskId = app.scheduleTask("checkForCommands()", checkInterval, false);
 }
 
-// Runs checkForCommands() synchronously, right now, from a button click.
-// A manual click always reaches AE's event loop even when the scheduled idle
-// task has stalled (e.g. AE suspended it during an expression-editor edit),
-// so this is the reliable way to unstick/verify the bridge without closing
-// the panel.
+// Runs checkForCommands() synchronously, right now, from a button click, AND
+// re-arms the scheduled poll task. A manual click always reaches AE's event
+// loop even when app.scheduleTask has stalled (e.g. AE suspended it during an
+// expression-editor edit) — but the stalled task itself was never cancelled
+// or rescheduled, so a plain one-off check here used to leave polling dead
+// afterward. Re-arming makes this a real unstick, not just a single peek.
 function forceCheckNow() {
     isChecking = false; // defensive: clear a stuck flag before forcing a check
     logToPanel("Force Check Now clicked.");
+    startCommandChecker(); // cancel + re-arm the polling task
     checkForCommands();
 }
 
 // Re-eval this file from disk so edits to the handlers take effect without
 // closing/reopening the panel. Sets a flag the fresh eval reads to skip UI rebuild.
-// Also does a FULL reset of the poller (cancel + reschedule the task, clear
-// isChecking) so this button is a real reset, not just a code refresh.
+// Also does a FULL reset of the poller and runs an immediate synchronous check
+// (via forceCheckNow) so this button is a real reset, not just a code refresh.
 function reloadBridge() {
     try {
         var f = new File($.global.__mcpBridgeScriptFile);
@@ -156,10 +166,9 @@ function reloadBridge() {
         logToPanel("Reloading handlers from " + f.fsName);
         $.global.__mcpBridgeReloading = true;
         $.evalFile(f);
-        isChecking = false;
-        startCommandChecker(); // cancel + re-arm the polling task
-        logToPanel("Reload complete. Polling task re-armed.");
+        logToPanel("Reload complete.");
         setStatus("Reloaded panel code and restarted polling.");
+        forceCheckNow(); // cancel + re-arm the polling task and run a check now
     } catch (e) {
         $.global.__mcpBridgeReloading = false;
         logToPanel("Reload error: " + e.toString());
@@ -170,16 +179,12 @@ if (!__mcpReloading) {
 var buttonRow = panel.add("group", undefined);
 buttonRow.orientation = "row";
 
-// Reload button: pulls the latest handler code off disk AND fully resets the
-// poller (cancels + re-arms the scheduled task, clears isChecking).
-var reloadButton = buttonRow.add("button", undefined, "Reload Panel");
+// Reload: pulls the latest handler code off disk, fully resets the poller
+// (cancels + re-arms the scheduled task, clears isChecking), and runs an
+// immediate synchronous check - combines the old "Reload Panel" and
+// "Force Check Now" buttons into one action.
+var reloadButton = buttonRow.add("button", undefined, "Reload");
 reloadButton.onClick = function() { reloadBridge(); };
-
-// Force Check Now: runs checkForCommands() synchronously on click. A manual
-// click always gets through AE's event loop even when app.scheduleTask has
-// stalled, so this recovers/unsticks the bridge without reloading anything.
-var forceCheckButton = buttonRow.add("button", undefined, "Force Check Now");
-forceCheckButton.onClick = function() { forceCheckNow(); };
 
 // Log startup
 logToPanel("MCP Bridge started");
@@ -188,6 +193,22 @@ statusText.text = "Ready - Auto-run is " + (autoRunCheckbox.value ? "ON" : "OFF"
 
 // Start the command checker
 startCommandChecker();
+
+// Self-heal watchdog: onActivate fires whenever the panel gains focus (docking/
+// undocking, clicking into it, AE bringing it forward), which — like a button
+// click — always reaches AE's event loop even when app.scheduleTask has
+// stalled. If polling looks dead (no check ran for 3+ intervals), re-arm it
+// automatically instead of waiting for someone to notice and click "Force
+// Check Now". This piggybacks on ordinary panel focus during normal AE use —
+// no dedicated user action required.
+panel.onActivate = function () {
+    var idleFor = new Date().getTime() - lastPollAt;
+    if (idleFor > checkInterval * 3) {
+        logToPanel("Self-heal: poll loop looked stalled (idle " + Math.round(idleFor / 1000) + "s), re-arming.");
+        isChecking = false;
+        startCommandChecker();
+    }
+};
 
 // Lay out, and keep contents resizing with the panel/window frame.
 panel.layout.layout(true);

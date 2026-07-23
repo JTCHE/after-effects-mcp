@@ -89,6 +89,33 @@ function listCompositions() {
     return JSON.stringify(result, null, 2);
 }
 
+// Single-call comp summary (dimensions, frameRate, duration, bgColor, pixelAspect) —
+// folds what would otherwise be a run-jsx call for bgColor alone into the same
+// round trip as everything getLayerTree/getProjectInfo already expose per-layer.
+function getCompositionInfo(args) {
+    args = args || {};
+    var comp = resolveComp(args);
+    if (!comp) return JSON.stringify({ status: "error", message: "Composition not found (pass compName or compIndex, or open a comp)" });
+    return JSON.stringify({
+        status: "success",
+        composition: {
+            name: comp.name,
+            id: comp.id,
+            width: comp.width,
+            height: comp.height,
+            pixelAspect: comp.pixelAspect,
+            duration: comp.duration,
+            frameRate: comp.frameRate,
+            frameDuration: comp.frameDuration,
+            time: comp.time,
+            bgColor: comp.bgColor,
+            numLayers: comp.numLayers,
+            workAreaStart: comp.workAreaStart,
+            workAreaDuration: comp.workAreaDuration
+        }
+    }, null, 2);
+}
+
 function getLayerInfo(args) {
     args = args || {};
     // Accept compName/compIndex (general) or the legacy compositionName; else active comp.
@@ -186,6 +213,14 @@ function getLayerTree(args) {
     }
 
     var result = { comp: comp.name };
+    if (args.namesOnly) {
+        result.layers = [];
+        for (var ni = 1; ni <= comp.numLayers; ni++) {
+            var nl = comp.layer(ni);
+            result.layers.push({ index: nl.index, name: nl.name, matchName: nl.matchName });
+        }
+        return JSON.stringify(result, null, 2);
+    }
     if (args.layerIndex || args.layerName) {
         var layer = null;
         if (args.layerIndex) {

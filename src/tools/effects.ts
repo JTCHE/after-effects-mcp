@@ -4,6 +4,24 @@ import { runAndWait } from "../bridge/client.js";
 
 export function registerEffectsTools(server: McpServer) {
   server.tool(
+    "list-effects",
+    "List the effects already on a layer (name, matchName, stack index, enabled) without dumping the " +
+    "full property tree. Use this to check whether a layer already has effect X before applying it.",
+    {
+      compName: z.string().optional().describe("Name of the target composition (preferred). Falls back to compIndex, then the active comp."),
+      compIndex: z.number().int().positive().optional().describe("1-based index of the target composition. Prefer compName."),
+      layerIndex: z.number().int().positive().describe("1-based index of the target layer within the composition.")
+    },
+    async (parameters) => {
+      try {
+        return await runAndWait("listLayerEffects", parameters);
+      } catch (error) {
+        return { content: [{ type: "text", text: `Error listing effects: ${String(error)}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
     "apply-effect",
     "Apply an effect to a layer in After Effects",
     {
@@ -21,6 +39,30 @@ export function registerEffectsTools(server: McpServer) {
         return await runAndWait("applyEffect", parameters);
       } catch (error) {
         return { content: [{ type: "text", text: `Error applying effect: ${String(error)}` }], isError: true };
+      }
+    }
+  );
+
+  server.tool(
+    "getLayerEffectProperties",
+    "List the properties of an effect already applied to a layer — flat, with unambiguous 1-based index and " +
+    "matchName per property, plus its current value. Use the returned index or matchName (not the display name) " +
+    "to address a specific property in run-jsx/expressions: some effects have multiple properties sharing a " +
+    "display name (e.g. Grid's own 'Width' vs. a Feather sub-group's 'Width'), and effect(\"Name\") lookups " +
+    "silently grab whichever matches first.",
+    {
+      compName: z.string().optional().describe("Name of the target composition (preferred). Falls back to compIndex, then the active comp."),
+      compIndex: z.number().int().positive().optional().describe("1-based index of the target composition. Prefer compName."),
+      layerIndex: z.number().int().positive().describe("1-based index of the target layer within the composition."),
+      effectName: z.string().optional().describe("Display name of the effect (e.g., 'Grid')."),
+      effectMatchName: z.string().optional().describe("Internal match name of the effect (e.g., 'ADBE Grid')."),
+      effectIndex: z.number().int().positive().optional().describe("1-based index of the effect within the layer's effect stack (from list-effects). Preferred — unambiguous.")
+    },
+    async (parameters) => {
+      try {
+        return await runAndWait("getLayerEffectProperties", parameters);
+      } catch (error) {
+        return { content: [{ type: "text", text: `Error listing effect properties: ${String(error)}` }], isError: true };
       }
     }
   );
@@ -137,98 +179,4 @@ export function registerEffectsTools(server: McpServer) {
     }
   );
 
-  server.tool(
-    "run-bridge-test",
-    "Run the bridge test effects script to verify communication and apply test effects",
-    {},
-    async () => {
-      try {
-        return await runAndWait("bridgeTestEffects", {});
-      } catch (error) {
-        return { content: [{ type: "text", text: `Error running bridge test: ${String(error)}` }], isError: true };
-      }
-    }
-  );
-
-  server.tool(
-    "mcp_aftereffects_get_effects_help",
-    "Get help on using After Effects effects",
-    {},
-    async () => ({
-      content: [
-        {
-          type: "text",
-          text: `# After Effects Effects Help
-
-## Common Effect Match Names
-These are internal names used by After Effects that can be used with the \`effectMatchName\` parameter:
-
-### Blur & Sharpen
-- Gaussian Blur: "ADBE Gaussian Blur 2"
-- Camera Lens Blur: "ADBE Camera Lens Blur"
-- Directional Blur: "ADBE Directional Blur"
-- Radial Blur: "ADBE Radial Blur"
-- Smart Blur: "ADBE Smart Blur"
-- Unsharp Mask: "ADBE Unsharp Mask"
-
-### Color Correction
-- Brightness & Contrast: "ADBE Brightness & Contrast 2"
-- Color Balance: "ADBE Color Balance (HLS)"
-- Color Balance (RGB): "ADBE Pro Levels2"
-- Curves: "ADBE CurvesCustom"
-- Exposure: "ADBE Exposure2"
-- Hue/Saturation: "ADBE HUE SATURATION"
-- Levels: "ADBE Pro Levels2"
-- Vibrance: "ADBE Vibrance"
-
-### Stylistic
-- Glow: "ADBE Glow"
-- Drop Shadow: "ADBE Drop Shadow"
-- Bevel Alpha: "ADBE Bevel Alpha"
-- Noise: "ADBE Noise"
-- Fractal Noise: "ADBE Fractal Noise"
-- CC Particle World: "CC Particle World"
-- CC Light Sweep: "CC Light Sweep"
-
-## Effect Templates
-The following predefined effect templates are available:
-
-- \`gaussian-blur\`: Simple Gaussian blur effect
-- \`directional-blur\`: Motion blur in a specific direction
-- \`color-balance\`: Adjust hue, lightness, and saturation
-- \`brightness-contrast\`: Basic brightness and contrast adjustment
-- \`curves\`: Advanced color adjustment using curves
-- \`glow\`: Add a glow effect to elements
-- \`drop-shadow\`: Add a customizable drop shadow
-- \`cinematic-look\`: Combination of effects for a cinematic appearance
-- \`text-pop\`: Effects to make text stand out (glow and shadow)
-
-## Example Usage
-To apply a Gaussian blur effect:
-
-\`\`\`json
-{
-  "compIndex": 1,
-  "layerIndex": 1,
-  "effectMatchName": "ADBE Gaussian Blur 2",
-  "effectSettings": {
-    "Blurriness": 25
-  }
-}
-\`\`\`
-
-To apply the "cinematic-look" template:
-
-\`\`\`json
-{
-  "compIndex": 1,
-  "layerIndex": 1,
-  "templateName": "cinematic-look"
-}
-\`\`\`
-`
-        }
-      ]
-    })
-  );
 }
