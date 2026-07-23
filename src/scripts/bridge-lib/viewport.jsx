@@ -12,27 +12,36 @@ function prepareViewportCapture(args) {
         if (!viewer) return JSON.stringify({ status: "error", message: "Could not open composition '" + comp.name + "' in viewer." });
         var view = viewer.views[viewer.activeViewIndex];
         var savedZoom = view.options.zoom;
-        // ponytail: known ceiling — fit-to-view reliably no-ops (root cause believed to be
-        // OS-level window focus: executeCommand for panel-scoped commands needs real UI
-        // focus, which a script fired from the bridge's idle poll task never has — see git
-        // history for the fuller investigation). It doesn't affect the screenshot quality,
-        // so this is now best-effort: try, and if it doesn't stick, proceed anyway instead
-        // of reporting an error the agent has no useful action to take on.
-        try {
-            var candidates = ["Fit", "Fit up to 100%", "Fit Up to 100%"];
-            var cmdId = 0;
-            for (var ci = 0; ci < candidates.length; ci++) {
-                cmdId = app.findMenuCommandId(candidates[ci]);
-                if (cmdId) break;
-            }
-            if (cmdId) app.executeCommand(cmdId);
-        } catch (fitErr) {}
+        // Callers whose capture method already covers the full render regardless of on-screen
+        // zoom (e.g. get-viewport-frame's Copy Frame to Clipboard) don't need this at all —
+        // skip it entirely rather than risk the known Fit-lookup failure mode below.
+        if (!args.skipFit) {
+            // ponytail: known ceiling — fit-to-view reliably no-ops (root cause believed to be
+            // OS-level window focus: executeCommand for panel-scoped commands needs real UI
+            // focus, which a script fired from the bridge's idle poll task never has — see git
+            // history for the fuller investigation). It doesn't affect the screenshot quality,
+            // so this is now best-effort: try, and if it doesn't stick, proceed anyway instead
+            // of reporting an error the agent has no useful action to take on.
+            try {
+                var candidates = ["Fit", "Fit up to 100%", "Fit Up to 100%"];
+                var cmdId = 0;
+                for (var ci = 0; ci < candidates.length; ci++) {
+                    cmdId = app.findMenuCommandId(candidates[ci]);
+                    if (cmdId) break;
+                }
+                if (cmdId) app.executeCommand(cmdId);
+            } catch (fitErr) {}
+        }
         return JSON.stringify({
             status: "success",
             compName: comp.name,
             savedZoom: savedZoom,
             time: comp.time,
-            projectFile: app.project.file ? app.project.file.name : "Untitled Project"
+            projectFile: app.project.file ? app.project.file.name : "Untitled Project",
+            // Piggybacked here (rather than a separate run-jsx call) so callers that need
+            // both don't make two rapid back-to-back bridge calls — see the "bridge polling
+            // can stall" gotcha in CLAUDE.md, reproduced by exactly that pattern.
+            aeVersion: app.version
         });
     } catch (e) {
         return JSON.stringify({ status: "error", message: "prepareViewportCapture failed: " + e.toString() });

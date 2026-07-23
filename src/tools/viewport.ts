@@ -6,6 +6,44 @@ import * as path from "path";
 import { z } from "zod";
 import { runAndWait } from "../bridge/client.js";
 
+// Reads AE's own keyboard-preset files to find the live binding for "Copy Frame to
+// Clipboard" (AE 26.3+), instead of hardcoding a shortcut that a user may have rebound.
+// AE's prefs file names its active preset ("Shortcut File Location"); that preset file
+// (under .../<version>/aeks/) lists "CopyFrameToClipboard" = "(Ctrl+Alt+Shift+F5)".
+function resolveCopyFrameShortcut(aeVersion: string): string | null {
+  const appData = process.env.APPDATA;
+  if (!appData) return null;
+  const baseDir = path.join(appData, "Adobe", "After Effects");
+  const verDir = path.join(baseDir, aeVersion);
+  if (!fs.existsSync(verDir)) return null;
+
+  const prefsFile = path.join(verDir, `Adobe After Effects ${aeVersion} Prefs.txt`);
+  let shortcutFileName = "After Effects Default.txt";
+  if (fs.existsSync(prefsFile)) {
+    const locMatch = fs.readFileSync(prefsFile, "utf8").match(/"Shortcut File Location"\s*=\s*"([^"]+)"/);
+    if (locMatch) shortcutFileName = locMatch[1];
+  }
+
+  const aeksFile = path.join(verDir, "aeks", shortcutFileName);
+  if (!fs.existsSync(aeksFile)) return null;
+  const cmdMatch = fs.readFileSync(aeksFile, "utf8").match(/"CopyFrameToClipboard"\s*=\s*"\(([^)]*)\)"/);
+  return cmdMatch && cmdMatch[1] ? cmdMatch[1] : null;
+}
+
+// "Ctrl+Alt+Shift+F5" -> SendKeys syntax "^%+{F5}".
+function toSendKeysCombo(combo: string): string {
+  const parts = combo.split("+");
+  const key = parts.pop()!;
+  let prefix = "";
+  for (const p of parts) {
+    if (/^ctrl$/i.test(p)) prefix += "^";
+    else if (/^alt$/i.test(p)) prefix += "%";
+    else if (/^shift$/i.test(p)) prefix += "+";
+  }
+  const needsBraces = key.length > 1 || "+^%~(){}[]".includes(key);
+  return prefix + (needsBraces ? `{${key}}` : key);
+}
+
 // Windows-only OS-level capture of the AE application window — what's actually on
 // screen (viewport, timeline, panel chrome), not a re-render via saveFrameToPng.
 // Runs entirely on the Node side (PowerShell + user32 PrintWindow); never touches the
@@ -91,6 +129,98 @@ export function registerViewportTools(server: McpServer, scriptsDir: string) {
             await runAndWait("restoreViewportZoom", { compName, compIndex, zoom: savedZoom }, 15000);
           } catch { /* best-effort restore; leave viewer at fit zoom if bridge dropped */ }
         }
+      }
+    }
+  );
+
+  // Uses AE 26.3+'s "Copy Frame to Clipboard" (beta) to get a properly rendered,
+  // viewport-only frame instead of get-viewport-screenshot's whole-window crop.
+  // Different failure shape than that tool (steals OS foreground, beta-only, depends
+  // on clipboard state), so it's a separate tool rather than a flag on the existing one.
+  server.tool(
+    "get-viewport-frame",
+    "Capture just the composition viewport's rendered frame (cropped, not the whole AE " +
+    "window) using After Effects 26.3+'s beta 'Copy Frame to Clipboard' shortcut. Requires " +
+    "AE 26.3 or newer. Briefly steals OS window focus to send the keyboard shortcut, so avoid " +
+    "calling this while the user is actively typing elsewhere. Falls back with a clear error " +
+    "if the AE version is too old, the shortcut isn't bound, or the clipboard read fails — use " +
+    "get-viewport-screenshot instead in those cases.",
+    {
+      compName: z.string().optional().describe("Composition to open/focus in the viewer before capture. Falls back to compIndex, then the active comp."),
+      compIndex: z.number().int().positive().optional().describe("1-based index of the composition to open/focus. Prefer compName."),
+      time: z.number().nonnegative().optional().describe("Move the comp's playhead to this time (seconds) before capture.")
+    },
+    async ({ compName, compIndex, time }) => {
+      if (process.platform !== "win32") {
+        return { content: [{ type: "text", text: "get-viewport-frame is Windows-only." }], isError: true };
+      }
+
+      let aeVersion = "";
+      let projectHint = "";
+      let prepNote = "";
+      try {
+        // Best-effort, same as get-viewport-screenshot: a failed Fit/focus attempt
+        // shouldn't block the capture, just costs us the projectHint disambiguator.
+        // skipFit: Copy Frame to Clipboard captures the full rendered viewport regardless
+        // of on-screen zoom, so there's no need to fit-to-view (and no exposure to that
+        // step's known failure mode) the way get-viewport-screenshot's window crop needs.
+        const prep = await runAndWait("prepareViewportCapture", { compName, compIndex, time, skipFit: true }, 15000);
+        const parsed = JSON.parse(prep.content[0]?.text ?? "{}");
+        if (parsed.status === "success") {
+          projectHint = parsed.projectFile ?? "";
+          aeVersion = String(parsed.aeVersion ?? "").split("x")[0]; // "26.3x87" -> "26.3"
+        } else {
+          prepNote = ` (viewer focus skipped: ${parsed.message || "bridge reported an error"})`;
+          // Fall back to a standalone call only when prepareViewportCapture itself failed
+          // (so there's no risk of the rapid-back-to-back-calls stall in the common case).
+          const versionResult = await runAndWait("runJsx", { code: "app.version" }, 10000);
+          const versionParsed = JSON.parse(versionResult.content[0]?.text ?? "{}");
+          aeVersion = String(versionParsed.result ?? "").split("x")[0];
+        }
+      } catch {
+        return { content: [{ type: "text", text: "Error: bridge unresponsive — could not read the AE version." }], isError: true };
+      }
+
+      if (!aeVersion) {
+        return { content: [{ type: "text", text: "Could not determine the After Effects version from the bridge." }], isError: true };
+      }
+
+      const shortcut = resolveCopyFrameShortcut(aeVersion);
+      if (!shortcut) {
+        return {
+          content: [{
+            type: "text",
+            text: `Could not find a "Copy Frame to Clipboard" shortcut binding for After Effects ${aeVersion}. ` +
+              `This feature needs AE 26.3+ (beta) with a shortcut assigned to it (Edit > Keyboard Shortcuts > search ` +
+              `"Copy Frame"). Use get-viewport-screenshot instead.`
+          }],
+          isError: true
+        };
+      }
+
+      try {
+        const outPath = path.join(os.tmpdir(), `ae_frame_${Date.now()}.png`);
+        const scriptPath = path.join(scriptsDir, "capture-frame-clipboard.ps1");
+        const hintArg = projectHint ? ` -ProjectHint "${projectHint.replace(/"/g, '""')}"` : "";
+        const sendKeysCombo = toSendKeysCombo(shortcut).replace(/"/g, '""');
+        const stdout = execSync(
+          `powershell -NoProfile -sta -ExecutionPolicy Bypass -File "${scriptPath}" -OutPath "${outPath}" -SendKeysCombo "${sendKeysCombo}"${hintArg}`,
+          { encoding: "utf8" }
+        ).trim();
+
+        if (stdout.startsWith("ERROR:") || !fs.existsSync(outPath)) {
+          return { content: [{ type: "text", text: stdout || "Frame capture failed (no output file produced)." }], isError: true };
+        }
+
+        const imageData = fs.readFileSync(outPath).toString("base64");
+        return {
+          content: [
+            { type: "image", data: imageData, mimeType: "image/png" },
+            { type: "text", text: `Saved to ${outPath} (via Copy Frame to Clipboard, shortcut ${shortcut})${prepNote}` }
+          ]
+        };
+      } catch (error) {
+        return { content: [{ type: "text", text: `Error capturing frame: ${String(error)}` }], isError: true };
       }
     }
   );
