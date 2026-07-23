@@ -146,11 +146,19 @@ export async function runAndWait(command: string, args: Record<string, any> = {}
   const requestId = writeCommandFile(command, args);
   const result = await waitForBridgeResult(command, timeoutMs, 250, requestId);
   let isError = false;
+  let text = result;
   try {
-    isError = JSON.parse(result)?.status === "error";
-  } catch { /* non-JSON result stays isError:false */ }
+    const parsed = JSON.parse(result);
+    isError = parsed?.status === "error";
+    // _requestId/_responseTimestamp/_commandExecuted exist only for the matching above —
+    // strip them before they reach the agent as unexplained clutter on every response.
+    delete parsed._requestId;
+    delete parsed._responseTimestamp;
+    delete parsed._commandExecuted;
+    text = JSON.stringify(parsed, null, 2);
+  } catch { /* non-JSON result passed through as-is */ }
   return {
-    content: [{ type: "text" as const, text: result }],
+    content: [{ type: "text" as const, text }],
     ...(isError ? { isError: true } : {})
   };
 }
