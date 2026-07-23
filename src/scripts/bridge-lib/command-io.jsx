@@ -33,11 +33,19 @@ function executeCommand(command, args, expectedTimestamp) {
     try {
         logToPanel("Attempting to execute: " + command); // Log before switch
         switch (command) {
+            case "ping":
+                // Pure liveness check - no project/comp/layer access, so it works
+                // even when nothing is open, and confirms the poll loop is running.
+                result = JSON.stringify({ status: "ok", alive: true, version: __BRIDGE_VERSION });
+                break;
             case "getProjectInfo":
                 result = getProjectInfo();
                 break;
             case "listCompositions":
                 result = listCompositions();
+                break;
+            case "getCompositionInfo":
+                result = getCompositionInfo(args);
                 break;
             case "getLayerInfo":
                 result = getLayerInfo(args);
@@ -101,6 +109,12 @@ function executeCommand(command, args, expectedTimestamp) {
             case "getEffectPropertiesByMatchName":
                 result = getEffectPropertiesByMatchName(args);
                 break;
+            case "listLayerEffects":
+                result = listLayerEffects(args);
+                break;
+            case "getLayerEffectProperties":
+                result = getLayerEffectProperties(args);
+                break;
             case "applyEffect":
                 logToPanel("Calling applyEffect function...");
                 result = applyEffect(args);
@@ -125,11 +139,6 @@ function executeCommand(command, args, expectedTimestamp) {
                 logToPanel("Calling applyEffectTemplate function...");
                 result = applyEffectTemplate(args);
                 logToPanel("Returned from applyEffectTemplate.");
-                break;
-            case "bridgeTestEffects":
-                logToPanel("Calling bridgeTestEffects function...");
-                result = bridgeTestEffects(args);
-                logToPanel("Returned from bridgeTestEffects.");
                 break;
             case "createCamera":
                 logToPanel("Calling createCamera function...");

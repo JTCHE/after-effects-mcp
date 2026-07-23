@@ -5,6 +5,7 @@ import { runAndWait, readResultsFromTempFile } from "../bridge/client.js";
 // Double whitelist with the bridge's command switch — moot in practice since run-jsx
 // is a full escape hatch, but kept as-is (see CLAUDE.md "Whitelist model" note).
 const ALLOWED_SCRIPTS = [
+  "ping",
   "listCompositions",
   "getProjectInfo",
   "getLayerInfo",
@@ -21,7 +22,6 @@ const ALLOWED_SCRIPTS = [
   "removeEffect",
   "renameEffect",
   "applyEffectTemplate",
-  "bridgeTestEffects",
   "createCamera",
   "batchSetLayerProperties",
   "setCompositionProperties",

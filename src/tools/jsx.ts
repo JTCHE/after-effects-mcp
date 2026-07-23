@@ -28,6 +28,23 @@ export function registerJsxTools(server: McpServer) {
     }
   );
 
+  // Lightweight liveness check - doesn't touch the project/comp/layer, so it works even
+  // with nothing open, and round-trips through the same poll loop as every other command.
+  server.tool(
+    "ping",
+    "Check whether the MCP Bridge panel is alive and its poll loop is running, without " +
+    "touching the After Effects project. Use this instead of a real command when you just " +
+    "want to confirm connectivity (e.g. after a timeout, before a batch of calls).",
+    {},
+    async () => {
+      try {
+        return await runAndWait("ping", {}, 10000);
+      } catch (error) {
+        return { content: [{ type: "text", text: `Error pinging bridge: ${String(error)}` }], isError: true };
+      }
+    }
+  );
+
   // Re-evaluate the bridge .jsx from disk without needing a human to click "Reload Panel".
   // Use this whenever a bridge-side .jsx edit was just deployed to the install path, or when
   // commands are timing out/behaving stale (AE's idle task can wedge; a reload also re-arms it).
@@ -35,7 +52,9 @@ export function registerJsxTools(server: McpServer) {
     "reload-bridge",
     "Re-load the MCP Bridge.jsx panel code from disk inside After Effects, without needing the " +
     "user to click 'Reload Panel' by hand. Use this right after deploying an edited bridge script " +
-    "to the AE install path, or if bridge commands seem to be running stale/old logic.",
+    "to the AE install path, or if bridge commands seem to be running stale/old logic. NOTE: this " +
+    "queues through the same poll loop as any other command, so it will NOT recover a fully-stalled " +
+    "poller (still-'pending' timeouts) — ask the user to click 'Force Check Now' in the panel instead.",
     {},
     async () => {
       try {
