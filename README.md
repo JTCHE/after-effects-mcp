@@ -1,104 +1,112 @@
-# 🎬 After Effects MCP Server
+# After Effects MCP Server
 
 ![Node.js](https://img.shields.io/badge/node-%3E=14.x-brightgreen.svg)
 ![Build](https://img.shields.io/badge/build-passing-success)
 ![License](https://img.shields.io/github/license/Dakkshin/after-effects-mcp)
 ![Platform](https://img.shields.io/badge/platform-after%20effects-blue)
 
-✨ A Model Context Protocol (MCP) server for Adobe After Effects that enables AI assistants and other applications to control After Effects through a standardized protocol.
+A Model Context Protocol (MCP) server for Adobe After Effects. It lets AI assistants and other MCP clients control After Effects — creating compositions, layers, keyframes, and effects — through a standardized protocol.
 
-<a href="https://glama.ai/mcp/servers/@Dakkshin/after-effects-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@Dakkshin/after-effects-mcp/badge" alt="mcp-after-effects MCP server" />
-</a>
+## About this fork
 
-## Table of Contents
+This is a fork of [Dakkshin/after-effects-mcp](https://github.com/Dakkshin/after-effects-mcp). Tools and behavior are unchanged for end users; the fork is a maintainability refactor:
+
+- `src/index.ts` (~1064 lines) split into a thin orchestrator plus one module per concern: `src/bridge/client.ts` (IPC with the AE panel), `src/schemas.ts` (shared Zod schemas), `src/resources.ts`, `src/prompts.ts`, and one `src/tools/*.ts` file per tool domain.
+- `src/scripts/MCP Bridge.jsx` (~2596 lines) split into `src/scripts/bridge-lib/*.jsx` (one file per command domain) plus `bridge-entry.jsx` (panel UI/polling). `scripts/build-bridge.js` concatenates these at build time into the single file After Effects loads. An ExtendScript `#include`-based split was tried first and reverted — it silently broke the panel's hot-reload path (see `CLAUDE.md`).
+- Removed 10 unreferenced legacy `.jsx` files under `src/scripts/`.
+- Trimmed `CLAUDE.md` to project structure and hard rules.
+
+If you only want to use the server, everything below applies exactly as it does upstream.
+
+## Table of contents
 - [Features](#features)
-  - [Core Composition Features](#core-composition-features)
-  - [Layer Management](#layer-management)
-  - [Animation Capabilities](#animation-capabilities)
-- [Setup Instructions](#setup-instructions)
+  - [Core composition features](#core-composition-features)
+  - [Layer management](#layer-management)
+  - [Animation capabilities](#animation-capabilities)
+- [Setup instructions](#setup-instructions)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
-  - [Update MCP Config](#Update-MCP-Config)
-  - [Running the Server](#running-the-server)
-- [Usage Guide](#usage-guide)
-  - [Creating Compositions](#creating-compositions)
-  - [Working with Layers](#working-with-layers)
+  - [Update MCP config](#update-mcp-config)
+  - [Running the server](#running-the-server)
+- [Usage guide](#usage-guide)
+  - [Creating compositions](#creating-compositions)
+  - [Working with layers](#working-with-layers)
   - [Animation](#animation)
-- [Available MCP Tools](#available-mcp-tools)
-- [For Developers](#for-developers)
-  - [Project Structure](#project-structure)
-  - [Building the Project](#building-the-project)
+- [Available MCP tools](#available-mcp-tools)
+- [For developers](#for-developers)
+  - [Project structure](#project-structure)
+  - [Building the project](#building-the-project)
   - [Contributing](#contributing)
 - [License](#license)
 
-## 📦 Features
+## Features
 
-### 🎥 Core Composition Features
-- **Create compositions** with custom settings (size, frame rate, duration, background color)
-- **List all compositions** in a project
-- **Get project information** such as frame rate, dimensions, and duration
+### Core composition features
+- Create compositions with custom settings (size, frame rate, duration, background color)
+- List all compositions in a project
+- Get project information such as frame rate, dimensions, and duration
 
-### 🧱 Layer Management
-- **Create text layers** with customizable properties (font, size, color, position)
-- **Create shape layers** (rectangle, ellipse, polygon, star) with colors and strokes
-- **Create solid/adjustment layers** for backgrounds and effects
-- **Create camera layers** with configurable zoom and position
-- **Create null objects** for animation control
-- **Modify layer properties** like position, scale, rotation, opacity, timing
-- **Toggle 2D/3D mode** for layers
-- **Set blend modes** (normal, multiply, screen, etc.)
-- **Track matte** support (alpha, luma, inverted)
-- **Duplicate layers** with optional rename
-- **Delete layers** from composition
-- **Create/modify masks** with feather, expansion, and opacity
+### Layer management
+- Create text layers with customizable properties (font, size, color, position)
+- Create shape layers (rectangle, ellipse, polygon, star) with colors and strokes
+- Create solid/adjustment layers for backgrounds and effects
+- Create camera layers with configurable zoom and position
+- Create null objects for animation control
+- Modify layer properties: position, scale, rotation, opacity, timing
+- Toggle 2D/3D mode for layers
+- Set blend modes (normal, multiply, screen, etc.)
+- Track matte support (alpha, luma, inverted)
+- Duplicate layers with optional rename
+- Delete layers from composition
+- Create and modify masks with feather, expansion, and opacity
 
-### 🌀 Animation Capabilities
-- **Set keyframes** for layer properties (Position, Scale, Rotation, Opacity, etc.)
-- **Apply expressions** to layer properties for dynamic animations
-- **Batch set properties** across multiple layers at once
+### Animation capabilities
+- Set keyframes for layer properties (position, scale, rotation, opacity, etc.)
+- Apply expressions to layer properties for dynamic animations
+- Batch set properties across multiple layers at once
 
-## ⚙️ Setup Instructions
+## Setup instructions
 
-### 🛠 Prerequisites
+### Prerequisites
 - Adobe After Effects (2022 or later)
 - Node.js (v14 or later)
-- npm or yarn package manager
+- npm or yarn
 
-### 📥 Installation
+### Installation
 
-1. **Clone the repository**
+1. Clone the repository
    ```bash
-   git clone https://github.com/Dakkshin/after-effects-mcp.git
+   git clone https://github.com/JTCHE/after-effects-mcp.git
    cd after-effects-mcp
    ```
 
-2. **Install dependencies**
+2. Install dependencies
    ```bash
    npm install
    # or
    yarn install
    ```
 
-3. **Build the project**
+3. Build the project
    ```bash
    npm run build
    # or
    yarn build
    ```
 
-4. **Install the After Effects panel**
+4. Install the After Effects panel
    ```bash
    npm run install-bridge
    # or
    yarn install-bridge
    ```
-   This will copy the necessary scripts to your After Effects installation.
+   This copies the necessary scripts to your After Effects installation.
 
-### 🔧 Update MCP Config
+### Update MCP config
 
-#### Option 1: Using .mcp.json (Recommended for Claude Code)
-The repository includes a `.mcp.json` file for easy configuration. Copy or reference it in your MCP settings:
+**Option 1: `.mcp.json` (recommended for Claude Code)**
+
+The repository includes a `.mcp.json` file. Copy or reference it in your MCP settings:
 
 ```json
 {
@@ -111,120 +119,96 @@ The repository includes a `.mcp.json` file for easy configuration. Copy or refer
 }
 ```
 
-#### Option 2: Manual Configuration
-Go to your client (e.g., Claude or Cursor) and update your config file:
+**Option 2: Manual configuration**
+
+Update your MCP client's config file (Claude, Cursor, etc.):
 
 ```json
 {
   "mcpServers": {
     "AfterEffectsMCP": {
       "command": "node",
-      "args": ["C:\\Users\\Dakkshin\\after-effects-mcp\\build\\index.js"]
+      "args": ["C:\\path\\to\\after-effects-mcp\\build\\index.js"]
     }
   }
 }
 ```
 
-### ▶️ Running the Server
+### Running the server
 
-1. **Start the MCP server**
+1. Start the MCP server
    ```bash
    npm start
    # or
    yarn start
    ```
+2. Open After Effects.
+3. Open the MCP Bridge panel: Window > MCP Bridge.jsx. It polls for commands every few seconds — make sure "Auto-run commands" is checked.
 
-2. **Open After Effects**
+## Usage guide
 
-3. **Open the MCP Bridge panel**
-   - In After Effects, go to Window > MCP Bridge.jsx
-   - The panel will automatically check for commands every few seconds
-   - Make sure the "Auto-run commands" checkbox is enabled
+Once the server is running and the MCP Bridge panel is open in After Effects, an MCP client can send it commands.
 
-## 🚀 Usage Guide
+### Creating compositions
 
-Once you have the server running and the MCP Bridge panel open in After Effects, you can control After Effects through the MCP protocol. This allows AI assistants or custom applications to send commands to After Effects.
+Create compositions with a name, width/height, frame rate, duration, and background color.
 
-### 📘 Creating Compositions
-
-You can create new compositions with custom settings:
-- Name
-- Width and height (in pixels)
-- Frame rate
-- Duration
-- Background color
-
-Example MCP tool usage (for developers):
 ```javascript
 mcp_aftereffects_create_composition({
-  name: "My Composition", 
-  width: 1920, 
-  height: 1080, 
+  name: "My Composition",
+  width: 1920,
+  height: 1080,
   frameRate: 30,
   duration: 10
 });
 ```
 
-### ✍️ Working with Layers
+### Working with layers
 
-You can create and modify different types of layers:
+**Text layers** — content, font, size, color, position, timing, opacity.
 
-**Text layers:**
-- Set text content, font, size, and color
-- Position text anywhere in the composition
-- Adjust timing and opacity
+**Shape layers** — rectangles, ellipses, polygons, stars; fill/stroke colors; size and position.
 
-**Shape layers:**
-- Create rectangles, ellipses, polygons, and stars
-- Set fill and stroke colors
-- Customize size and position
+**Solid layers** — background colors and adjustment layers for effects.
 
-**Solid layers:**
-- Create background colors
-- Make adjustment layers for effects
+### Animation
 
-### 🕹 Animation
+**Keyframes** — set property values at specific times; motion, scale, rotation, opacity.
 
-You can animate layers with:
+**Expressions** — apply JavaScript expressions to properties for procedural, linked animation.
 
-**Keyframes:**
-- Set property values at specific times
-- Create motion, scaling, rotation, and opacity changes
-- Control the timing of animations
+## Available MCP tools
 
-**Expressions:**
-- Apply JavaScript expressions to properties
-- Create dynamic, procedural animations
-- Connect property values to each other
+| Command | Description |
+|---|---|
+| `create-composition` | Create a new composition |
+| `run-script` | Run a JS script inside AE |
+| `get-results` | Get script results |
+| `get-help` | Help for available commands |
+| `setLayerKeyframe` | Add keyframe to layer property |
+| `setLayerExpression` | Add/remove expressions from properties |
+| `setLayerProperties` | Set layer properties (position, scale, rotation, opacity, blendMode, threeDLayer, trackMatteType, enabled, etc.) |
+| `batchSetLayerProperties` | Apply properties to multiple layers |
+| `getLayerInfo` | Get layer info (position, 3D status) |
+| `createCamera` | Create camera layer |
+| `createNullObject` | Create null object for animation |
+| `duplicateLayer` | Duplicate a layer |
+| `deleteLayer` | Delete a layer |
+| `setLayerMask` | Create/modify layer masks |
 
-## 🛠 Available MCP Tools
+## For developers
 
-| Command                     | Description                            |
-|-----------------------------|----------------------------------------|
-| `create-composition`        | Create a new composition               |
-| `run-script`                | Run a JS script inside AE              |
-| `get-results`               | Get script results                     |
-| `get-help`                  | Help for available commands            |
-| `setLayerKeyframe`          | Add keyframe to layer property         |
-| `setLayerExpression`        | Add/remove expressions from properties|
-| `setLayerProperties`        | Set layer properties (position, scale, rotation, opacity, blendMode, threeDLayer, trackMatteType, enabled, etc.) |
-| `batchSetLayerProperties`  | Apply properties to multiple layers   |
-| `getLayerInfo`              | Get layer info (position, 3D status)  |
-| `createCamera`              | Create camera layer                   |
-| `createNullObject`          | Create null object for animation      |
-| `duplicateLayer`            | Duplicate a layer                     |
-| `deleteLayer`               | Delete a layer                        |
-| `setLayerMask`              | Create/modify layer masks             |
+### Project structure
 
-## 👨‍💻 For Developers
+- `src/index.ts` — thin orchestrator that wires up the MCP server
+- `src/bridge/client.ts` — file-based IPC with the AE-side panel
+- `src/schemas.ts` — shared Zod schemas
+- `src/resources.ts`, `src/prompts.ts` — MCP resources/prompts
+- `src/tools/*.ts` — one file per tool domain (composition, effects, keyframes-expressions, jsx, inspection, viewport, help, scripts)
+- `src/scripts/bridge-lib/*.jsx` + `src/scripts/bridge-entry.jsx` — ExtendScript source, concatenated by `scripts/build-bridge.js` into `src/scripts/MCP Bridge.jsx` (generated — the file After Effects actually loads)
+- `install-bridge.js` — installs the panel into After Effects
 
-### 🧩 Project Structure
-
-- `src/index.ts`: MCP server implementation
-- `src/scripts/MCP Bridge.jsx`: Main After Effects panel script
-- `install-bridge.js`: Script to install the panel in After Effects
-
-### 📦 Building the Project
+### Building the project
 
 ```bash
 npm run build
@@ -232,16 +216,12 @@ npm run build
 yarn build
 ```
 
-**Note:** This project uses esbuild for fast builds, replacing the previous TypeScript compiler approach that could run out of memory on larger codebases.
+This uses esbuild, which replaced an earlier TypeScript-compiler build that ran out of memory on larger codebases.
 
-### 🤝 Contributing
+### Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Dakkshin/after-effects-mcp&type=date&legend=top-left)](https://www.star-history.com/#Dakkshin/after-effects-mcp&type=date&legend=top-left)
+Pull requests are welcome.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT — see the LICENSE file for details.

@@ -44,6 +44,36 @@ Available scripts:
 - applyEffect: Apply an effect to a layer
 - applyEffectTemplate: Apply a predefined effect template to a layer
 
+## Common Effect Match Names
+These are internal names used by After Effects that can be used with the \`effectMatchName\` parameter:
+
+### Blur & Sharpen
+- Gaussian Blur: "ADBE Gaussian Blur 2"
+- Camera Lens Blur: "ADBE Camera Lens Blur"
+- Directional Blur: "ADBE Directional Blur"
+- Radial Blur: "ADBE Radial Blur"
+- Smart Blur: "ADBE Smart Blur"
+- Unsharp Mask: "ADBE Unsharp Mask"
+
+### Color Correction
+- Brightness & Contrast: "ADBE Brightness & Contrast 2"
+- Color Balance: "ADBE Color Balance (HLS)"
+- Color Balance (RGB): "ADBE Pro Levels2"
+- Curves: "ADBE CurvesCustom"
+- Exposure: "ADBE Exposure2"
+- Hue/Saturation: "ADBE HUE SATURATION"
+- Levels: "ADBE Pro Levels2"
+- Vibrance: "ADBE Vibrance"
+
+### Stylistic
+- Glow: "ADBE Glow"
+- Drop Shadow: "ADBE Drop Shadow"
+- Bevel Alpha: "ADBE Bevel Alpha"
+- Noise: "ADBE Noise"
+- Fractal Noise: "ADBE Fractal Noise"
+- CC Particle World: "CC Particle World"
+- CC Light Sweep: "CC Light Sweep"
+
 Effect Templates:
 - gaussian-blur: Simple Gaussian blur effect
 - directional-blur: Motion blur in a specific direction
@@ -54,6 +84,16 @@ Effect Templates:
 - drop-shadow: Add a customizable drop shadow
 - cinematic-look: Combination of effects for a cinematic appearance
 - text-pop: Effects to make text stand out (glow and shadow)
+
+Example Usage - applying a Gaussian blur effect:
+\`\`\`json
+{
+  "compIndex": 1,
+  "layerIndex": 1,
+  "effectMatchName": "ADBE Gaussian Blur 2",
+  "effectSettings": { "Blurriness": 25 }
+}
+\`\`\`
 
 Note: The auto-running panel can be left open in After Effects to continuously listen for commands from external applications.`
         }
