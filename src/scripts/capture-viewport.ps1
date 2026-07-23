@@ -1,17 +1,24 @@
 param(
     [Parameter(Mandatory=$true)][string]$OutPath,
-    [int]$MaxWidth = 1600
+    [int]$MaxWidth = 1600,
+    # Project file name (e.g. "MyProject.aep") from the bridge's prepareViewportCapture
+    # call — After Effects puts it in the window title, so when more than one AfterFX.exe
+    # instance is running this picks the one actually driving the bridge instead of
+    # whichever instance the OS happens to list first.
+    [string]$ProjectHint = ""
 )
 
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 public class AeCapture {
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 }
@@ -20,7 +27,16 @@ public class AeCapture {
 # PrintWindow captures physical pixels — on a scaled display the two disagree.
 [AeCapture]::SetProcessDPIAware() | Out-Null
 
-$proc = Get-Process -Name "AfterFX" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+$procs = Get-Process -Name "AfterFX" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
+$proc = $null
+if ($ProjectHint) {
+    $proc = $procs | Where-Object {
+        $sb = New-Object System.Text.StringBuilder 512
+        [AeCapture]::GetWindowText($_.MainWindowHandle, $sb, $sb.Capacity) | Out-Null
+        $sb.ToString() -like "*$ProjectHint*"
+    } | Select-Object -First 1
+}
+if (-not $proc) { $proc = $procs | Select-Object -First 1 }
 if (-not $proc) {
     Write-Output "ERROR: After Effects process not found (or has no main window)."
     exit 1

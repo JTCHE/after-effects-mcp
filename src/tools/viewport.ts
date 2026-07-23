@@ -24,9 +24,10 @@ export function registerViewportTools(server: McpServer, scriptsDir: string) {
       maxWidth: z.number().int().positive().optional().describe("Downscale to this max width in pixels before returning (default 1600)."),
       compName: z.string().optional().describe("Composition to fit/center before capture. Falls back to compIndex, then the active comp. Ignored if fitToView is false."),
       compIndex: z.number().int().positive().optional().describe("1-based index of the composition to fit/center before capture. Prefer compName."),
+      time: z.number().nonnegative().optional().describe("Move the comp's playhead to this time (seconds) before capture. Ignored if fitToView is false."),
       fitToView: z.boolean().optional().describe("Zoom the comp viewer to fit and restore afterward (default true). Set false to capture whatever pan/zoom is currently on screen.")
     },
-    async ({ maxWidth = 1600, compName, compIndex, fitToView = true }) => {
+    async ({ maxWidth = 1600, compName, compIndex, time, fitToView = true }) => {
       if (process.platform !== "win32") {
         return {
           content: [{ type: "text", text: "get-viewport-screenshot is Windows-only." }],
@@ -35,13 +36,19 @@ export function registerViewportTools(server: McpServer, scriptsDir: string) {
       }
       let savedZoom: number | null = null;
       let fitNote = "";
+      // Which AE process actually owns this comp/project — passed to the capture script
+      // so it can pick the right window when multiple AfterFX.exe instances are running
+      // (PrintWindow otherwise grabs whichever instance's window the OS lists first).
+      let projectHint = "";
       if (fitToView) {
         try {
-          const prep = await runAndWait("prepareViewportCapture", { compName, compIndex }, 15000);
+          const prep = await runAndWait("prepareViewportCapture", { compName, compIndex, time }, 15000);
           const prepText = prep.content[0]?.text ?? "";
           const parsed = JSON.parse(prepText);
           if (parsed.status === "success") {
             savedZoom = parsed.savedZoom ?? null;
+            projectHint = parsed.projectFile ?? "";
+            fitNote = ` (comp '${parsed.compName}' in project '${projectHint}')`;
           } else {
             fitNote = ` (fit-to-view skipped: ${parsed.message || "bridge reported an error"})`;
           }
@@ -53,8 +60,9 @@ export function registerViewportTools(server: McpServer, scriptsDir: string) {
       try {
         const outPath = path.join(os.tmpdir(), `ae_viewport_${Date.now()}.png`);
         const scriptPath = path.join(scriptsDir, "capture-viewport.ps1");
+        const hintArg = projectHint ? ` -ProjectHint "${projectHint.replace(/"/g, '""')}"` : "";
         const stdout = execSync(
-          `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -OutPath "${outPath}" -MaxWidth ${maxWidth}`,
+          `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -OutPath "${outPath}" -MaxWidth ${maxWidth}${hintArg}`,
           { encoding: "utf8" }
         ).trim();
 
