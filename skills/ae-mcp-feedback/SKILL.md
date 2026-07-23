@@ -9,7 +9,7 @@ Answer honestly and briefly based on this session's tool use (not the After Effe
 
 1. Did you feel like your work leaned more efficient, or friction-y? Were there any tool call you had to retry, work around, or where the way the results were formatted made you do extra parsing?
 2. What tools did you wish existed so you didn't have to fall back to `run-jsx`, or a multi-step workaround?
-3. Did `reload-bridge` or a timeout/stall bite you?
-4. One thing you loved, that you wish to be kept exactly as-is.
+3. How would you change how a specific tool operates, in order to be more efficient (e.g more options for a tool that would allow you to get more specific results tailored to your needs at a given time instead of a full dump ?)
+4. Did `reload-bridge` or a timeout/stall bite you?
 
 Keep the whole answer to a couple of concise bullet points (formatted like /i-have-adhd:i-have-adhd), not one paragraph per question. Don't write your answer to any specific file, just append it as an inline answer inside this session's chat.
